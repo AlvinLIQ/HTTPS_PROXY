@@ -1,4 +1,5 @@
 #include <thread>
+#include <mutex>
 
 #include "header.h"
 
@@ -81,7 +82,9 @@ void proxy(SOCKET c_fd)
     cout << c_fd << ", closed\n";
 }
 
-void server(void (*f)(SOCKET))
+mutex cMutex;
+template <typename F>
+void server(F f)
 {
     SOCKET s_fd, c_fd;
     int mOn = 1;
@@ -90,6 +93,7 @@ void server(void (*f)(SOCKET))
         s_fd = initSocket();
         setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, &mOn, sizeof(mOn));
         printf("Listening...\n");
+        cMutex.lock();
         c_fd = listenSocket(s_fd, 4399);
         if (c_fd != (unsigned int)-1)
         {
@@ -98,32 +102,40 @@ void server(void (*f)(SOCKET))
             f(c_fd);
 //            thread(proxy, c_fd).detach();
         }
+        cMutex.unlock();
         close(s_fd);
     }
     while (clients_count);
     closeSocket(&s_fd);
 }
 
-SOCKET conn_fd = 0;
 void proxyDriver(int maxThreadsCount)
 {
     std::thread threads[maxThreadsCount];
+    SOCKET c_fds[maxThreadsCount] = {};
     for (int i = 0; i < maxThreadsCount; i++)
     {
-        threads[i] = thread([]()
+        threads[i] = thread([pC_fd = &c_fds[i]]()
         {
             while(isRuning)
             {
-                while(!conn_fd);
-                proxy(conn_fd);
-                conn_fd = 0;
+                while(*pC_fd <= 0);
+                proxy(*pC_fd);
+                *pC_fd = 0;
             }
         });
         threads[i].detach();
     }
-    server([](SOCKET c_fd)
+    server([maxThreadsCount, c_fds=&c_fds[0]](SOCKET c_fd)
     {
-        conn_fd = c_fd;
+        for (int i = 0; i < maxThreadsCount; i++)
+        {
+            if (c_fds[i] <= 0)
+            {
+                c_fds[i] = c_fd;
+                break;
+            }
+        }
     });
 }
 
@@ -132,11 +144,11 @@ int main()
 #ifdef _WIN32
     initWinSock();
 #endif
-/*
+
     server([](SOCKET c_fd)
     {
-        thread(proxy, c_fd);
-    });*/
-    proxyDriver(8);
+        thread(proxy, c_fd).detach();
+    });
+//    proxyDriver(6);
     return 0;
 }

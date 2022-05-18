@@ -162,6 +162,11 @@ static std::string httpGetHeaderContent(std::string headerStr, const char* targe
 	};
 	return result;
 }
+
+void GetLock()
+{
+	
+}
 #ifdef _WIN32
 static std::string wctos(const wchar_t* source)
 {
