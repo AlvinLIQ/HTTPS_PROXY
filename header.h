@@ -7,12 +7,25 @@
 #pragma comment(lib, "ws2_32.lib")
 #else
 //all the linux headers here, fuck
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netdb.h>
+#include <string.h>
+#include <string>
+#include <errno.h>
+
+#define closesocket close
+#define ioctlsocket ioctl
+
 typedef unsigned int SOCKET;
 #endif
 
+#include <iostream>
 #include <string>
 
-struct sockaddr_in initAddr_shd(UINT32 ip, int port)
+static struct sockaddr_in initAddr_shd(unsigned int ip, int port)
 {
 	struct sockaddr_in target_addr;
 	target_addr.sin_family = AF_INET;
@@ -22,10 +35,10 @@ struct sockaddr_in initAddr_shd(UINT32 ip, int port)
 	return target_addr;
 }
 
-struct sockaddr_in initAddr(const char* host, int port = 80)
+static struct sockaddr_in initAddr(const char* host, int port = 80)
 {
-	ADDRINFOA hints;
-	PADDRINFOA addr = NULL;
+	struct addrinfo hints;
+	struct addrinfo* addr = NULL;
 	struct sockaddr_in result = {};
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
@@ -49,7 +62,7 @@ struct sockaddr_in initAddr(const char* host, int port = 80)
 		exit(-1);
 
 	//		InetPton(AF_INET, host, &addr_p);
-	if (addr != nullptr)
+	if (addr != NULL)
 	{
 		result = *(struct sockaddr_in*)addr->ai_addr;
 		result.sin_port = htons(port);
@@ -57,8 +70,8 @@ struct sockaddr_in initAddr(const char* host, int port = 80)
 	
 	return result;
 }
-
-struct sockaddr_in initAddrW(const wchar_t* host, int port)
+#ifdef _WIN32
+static struct sockaddr_in initAddrW(const wchar_t* host, int port)
 {
 	ADDRINFOW hints;
 	PADDRINFOW addr = NULL;
@@ -76,9 +89,9 @@ struct sockaddr_in initAddrW(const wchar_t* host, int port)
 	result->sin_port = htons(port);
 	return *result;
 }
-
+#endif
 #ifdef _WIN32
-int initWinSock()
+static int initWinSock()
 {
 	WSADATA wsaData;
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
@@ -87,7 +100,7 @@ int initWinSock()
 }
 #endif
 
-SOCKET initSocket()
+static SOCKET initSocket()
 {
 	SOCKET socket_fd;
 	socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -95,17 +108,19 @@ SOCKET initSocket()
 	return socket_fd;
 }
 
-int sockConn(const SOCKET* s_fd, const struct sockaddr_in* target_addr)
+static int sockConn(const SOCKET* s_fd, const struct sockaddr_in* target_addr)
 {
 	return connect(*s_fd, (struct sockaddr*)target_addr, sizeof(*target_addr));
 }
 
-SOCKET listenSocket(const SOCKET s_fd, const int port)
+static SOCKET listenSocket(const SOCKET s_fd, const int port)
 {
-	struct sockaddr_in srv_addr = initAddr("0.0.0.0", port);
-	int s_len = sizeof(srv_addr);
+	struct sockaddr_in srv_addr = initAddr_shd(INADDR_ANY, port);
+	socklen_t s_len = sizeof(srv_addr);
+
 	if (bind(s_fd, (struct sockaddr*)&srv_addr, s_len) < 0)
 	{
+		std::cout << s_fd << ", " << errno << ", " << strerror(errno) << std::endl;
 		goto error;
 	}
 
@@ -113,18 +128,21 @@ SOCKET listenSocket(const SOCKET s_fd, const int port)
 	{
 		goto error;
 	}
+	
 	return accept(s_fd, (struct sockaddr*)&srv_addr, &s_len);
 error:
 	return -1;
 }
 
-void closeSocket(const SOCKET* s_fd)
+static void closeSocket(const SOCKET* s_fd)
 {
 	closesocket(*s_fd);
+#ifdef _WIN32
 	WSACleanup();
+#endif
 }
 
-std::string httpGetHeaderContent(std::string headerStr, const char* targetID)
+static std::string httpGetHeaderContent(std::string headerStr, const char* targetID)
 {
 	std::string result = "";
 	size_t fIndex, tLen = strlen(targetID);
@@ -144,8 +162,8 @@ std::string httpGetHeaderContent(std::string headerStr, const char* targetID)
 	};
 	return result;
 }
-
-std::string wctos(const wchar_t* source)
+#ifdef _WIN32
+static std::string wctos(const wchar_t* source)
 {
 	size_t sLen = wcslen(source);
 	char* c = new char[sLen * 3 + 1];
@@ -156,7 +174,7 @@ std::string wctos(const wchar_t* source)
 	return result;
 }
 
-wchar_t* ctowc(const char* source)
+static wchar_t* ctowc(const char* source)
 {
 	wchar_t* result;
 	int sLen, rLen = MultiByteToWideChar(CP_UTF8, 0, source, sLen = (int)strlen(source), NULL, 0);
@@ -165,3 +183,4 @@ wchar_t* ctowc(const char* source)
 	result[rLen] = '\0';
 	return result;
 }
+#endif

@@ -1,4 +1,3 @@
-#include <iostream>
 #include <thread>
 
 #include "header.h"
@@ -16,8 +15,8 @@ void proxy(SOCKET c_fd)
     char rBuf[1025] = "", srBuf[1025] = "";
     string headerStr = "", hostStr = "";
     int rLen = 0, srLen;
-    unsigned long ulMode = 1;
-    ioctlsocket(c_fd, FIONBIO, &ulMode);
+    unsigned long mOn = 1;
+    ioctlsocket(c_fd, FIONBIO, &mOn);
     sockaddr_in sc_Addr;
     while (isRuning)
     {
@@ -43,7 +42,7 @@ void proxy(SOCKET c_fd)
                         break;//FUCK!!!
                     }
                     cout << c_fd << ", " << hostStr << endl;
-                    ioctlsocket(sc_fd, FIONBIO, &ulMode);
+                    ioctlsocket(sc_fd, FIONBIO, &mOn);
                 }
             }
         }
@@ -82,21 +81,50 @@ void proxy(SOCKET c_fd)
     cout << c_fd << ", closed\n";
 }
 
-void server()
+void server(void (*f)(SOCKET))
 {
     SOCKET s_fd, c_fd;
+    int mOn = 1;
     while (isRuning)
     {
         s_fd = initSocket();
+        setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, &mOn, sizeof(mOn));
         printf("Listening...\n");
         c_fd = listenSocket(s_fd, 4399);
-        clients_count++;
-//        while (clients_count > 8);
-        thread(proxy, c_fd).detach();
-        closesocket(s_fd);
+        if (c_fd != (unsigned int)-1)
+        {
+            clients_count++;
+    //        while (clients_count > 8);
+            f(c_fd);
+//            thread(proxy, c_fd).detach();
+        }
+        close(s_fd);
     }
     while (clients_count);
     closeSocket(&s_fd);
+}
+
+SOCKET conn_fd = 0;
+void proxyDriver(int maxThreadsCount)
+{
+    std::thread threads[maxThreadsCount];
+    for (int i = 0; i < maxThreadsCount; i++)
+    {
+        threads[i] = thread([]()
+        {
+            while(isRuning)
+            {
+                while(!conn_fd);
+                proxy(conn_fd);
+                conn_fd = 0;
+            }
+        });
+        threads[i].detach();
+    }
+    server([](SOCKET c_fd)
+    {
+        conn_fd = c_fd;
+    });
 }
 
 int main()
@@ -104,5 +132,11 @@ int main()
 #ifdef _WIN32
     initWinSock();
 #endif
-    server();
+/*
+    server([](SOCKET c_fd)
+    {
+        thread(proxy, c_fd);
+    });*/
+    proxyDriver(8);
+    return 0;
 }
