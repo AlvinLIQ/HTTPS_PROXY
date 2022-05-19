@@ -14,7 +14,7 @@ void proxy(SOCKET c_fd)
 
     SOCKET sc_fd = 0;
     char rBuf[1025] = "", srBuf[1025] = "";
-    string headerStr = "", hostStr = "";
+    string headerStr = "", hostStr = "", proxyAuthStr = "";
     int rLen = 0, srLen;
     unsigned long mOn = 1;
     ioctlsocket(c_fd, FIONBIO, &mOn);
@@ -30,9 +30,19 @@ void proxy(SOCKET c_fd)
         if (!sc_fd)
         {
             rBuf[rLen] = '\0';
-            headerStr = rBuf;
+            headerStr += rBuf;
             if (rLen < 1024)
             {
+                cout <<headerStr<<endl;
+                proxyAuthStr = httpGetHeaderContent(headerStr, "Proxy-Authorization");
+                if (proxyAuthStr == "")
+                {
+                    const char authStr[] = "HTTP/1.1 407 Proxy Authentication Required\r\n"
+                                         "Proxy-Authenticate:Basic realm=\"hello mf\"\r\n\r\n";
+                    send(c_fd, authStr, strlen(authStr), 0);
+                    break;
+                }
+                cout << headerStr << endl;
                 hostStr = httpGetHeaderContent(headerStr, "Host").c_str();
                 if (hostStr != "")
                 {
