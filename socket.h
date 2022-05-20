@@ -113,23 +113,18 @@ static int sockConn(const SOCKET* s_fd, const struct sockaddr_in* target_addr)
 	return connect(*s_fd, (struct sockaddr*)target_addr, sizeof(*target_addr));
 }
 
-static SOCKET listenSocket(const SOCKET s_fd, const int port)
+static SOCKET listenSocket(const SOCKET s_fd, struct sockaddr_in* srv_addr)
 {
-	struct sockaddr_in srv_addr = initAddr_shd(INADDR_ANY, port);
-	socklen_t s_len = sizeof(srv_addr);
+	socklen_t s_len = sizeof(*srv_addr);
 
-	if (bind(s_fd, (struct sockaddr*)&srv_addr, s_len) < 0)
+	if (bind(s_fd, (struct sockaddr*)srv_addr, s_len) < 0)
 	{
 		std::cout << s_fd << ", " << errno << ", " << strerror(errno) << std::endl;
 		goto error;
 	}
 
-	if (listen(s_fd, 5) < 0)
-	{
-		goto error;
-	}
-	
-	return accept(s_fd, (struct sockaddr*)&srv_addr, &s_len);
+	return listen(s_fd, 5);	
+//	return accept(s_fd, (struct sockaddr*)&srv_addr, &s_len);
 error:
 	return -1;
 }

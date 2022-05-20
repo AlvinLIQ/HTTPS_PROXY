@@ -1,7 +1,7 @@
 #include <thread>
-#include <mutex>
+#include <signal.h>
 
-#include "header.h"
+#include "HTTPS_PROXY.h"
 #include "base64.h"
 
 short isRuning = 1;
@@ -13,13 +13,13 @@ using namespace std;
 string users[USERSCOUNT] = {"TEA:ASDAS", "MR.ROBOT:000"};
 size_t dataUsages[USERSCOUNT] = {};
 
-int proxyAuth(string proxyAuthStr)
+int HTTPS_PROXY::proxyAuth(std::string proxyAuthStr)
 {
-    proxyAuthStr = proxyAuthStr.substr(proxyAuthStr.find("Basic") + 5);
+    proxyAuthStr = base64_decrypt((uchar*)proxyAuthStr.substr(5).c_str());
     int i;
     for (i = 0; i < USERSCOUNT; i++)
     {
-        if (base64_encrypt((const uchar*)users[i].c_str()) == proxyAuthStr)
+        if (users[i] == proxyAuthStr)
         {
             break;
         }
@@ -27,7 +27,7 @@ int proxyAuth(string proxyAuthStr)
     return i;
 }
 
-void proxy(SOCKET c_fd)
+void HTTPS_PROXY::proxy(SOCKET c_fd)
 {
     cout << c_fd << ", Connected\n";
 
@@ -53,7 +53,24 @@ void proxy(SOCKET c_fd)
             rBuf[rLen] = '\0';
             headerStr += rBuf;
             if (rLen < 1024)
-            {   
+            {
+                /*
+                proxyAuthStr = httpGetHeaderContent(headerStr, "Proxy-Authorization");
+                if (proxyAuthStr == "")
+                {
+                    const char authReq[] = "HTTP/1.1 407 Proxy Authentication Required\r\n"
+                                         "Proxy-Authenticate:Basic realm=\"hello mf\"\r\n\r\n";
+                    send(c_fd, authReq, strlen(authReq), 0);
+                    break;
+                }
+                else if ((curUser = proxyAuth(proxyAuthStr)) >= USERSCOUNT)
+                {
+                    send(c_fd, "HTTP/1.1 403 No Fucking Way\r\n\r\n", 31, 0);
+                    cout<<"OHNONONONO"<<endl;
+                    break;
+                }
+                dataUsages[curUser] += headerStr.length();
+                */
                 hostStr = httpGetHeaderContent(headerStr, "Host").c_str();
                 if (hostStr != "")
                 {
@@ -71,21 +88,6 @@ void proxy(SOCKET c_fd)
                 }
 
                 cout <<headerStr<<endl;
-                proxyAuthStr = httpGetHeaderContent(headerStr, "Proxy-Authorization");
-                if (proxyAuthStr == "")
-                {
-                    const char authReq[] = "HTTP/1.1 407 Proxy Authentication Required\r\n"
-                                         "Proxy-Authenticate:Basic realm=\"hello mf\"\r\n\r\n";
-                    send(c_fd, authReq, strlen(authReq), 0);
-                    break;
-                }
-                else if ((curUser = proxyAuth(proxyAuthStr)) >= USERSCOUNT)
-                {
-                    send(c_fd, "HTTP/1.1 403 No Fucking Way\r\n\r\n", 31, 0);
-                    cout<<"OHNONONONO"<<endl;
-                    break;
-                }
-                dataUsages[curUser] += headerStr.length();
             }
         }
         
@@ -126,22 +128,31 @@ void proxy(SOCKET c_fd)
 }
 
 template <typename F>
-void server(F f)
+void HTTPS_PROXY::server(F f)
 {
     SOCKET s_fd, c_fd;
+    struct sockaddr_in c_addr, s_addr = initAddr("0.0.0.0", 4399);
+    socklen_t c_len;
     int mOn = 1;
     while (isRuning)
     {
         s_fd = initSocket();
         setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, &mOn, sizeof(mOn));
         printf("Listening...\n");
-        c_fd = listenSocket(s_fd, 4399);
-        if (c_fd != (SOCKET)-1)
+        if (listenSocket(s_fd, &s_addr) == (SOCKET)-1)
+            continue;
+        ioctlsocket(s_fd, FIONBIO, &mOn);
+        while (isRuning)
         {
-            clients_count++;
-//            while (clients_count > 12);
-            f(c_fd);
-//            thread(proxy, c_fd).detach();
+            c_fd = accept(s_fd, (struct sockaddr*)&c_addr, &c_len);
+            if (c_fd > 0 && c_fd != (SOCKET)-1)
+            {
+                clients_count++;
+    //            while (clients_count > 12);
+                f(c_fd);
+    //            thread(proxy, c_fd).detach();
+                break;
+            }
         }
         close(s_fd);
     }
@@ -149,18 +160,18 @@ void server(F f)
     closeSocket(&s_fd);
 }
 
-void proxyDriver(int maxThreadsCount)
+void HTTPS_PROXY::proxyDriver(int maxThreadsCount)
 {
     std::thread threads[maxThreadsCount];
     SOCKET c_fds[maxThreadsCount];
     memset(c_fds, -1, sizeof (SOCKET) * maxThreadsCount);
     for (int i = 0; i < maxThreadsCount; i++)
     {
-        threads[i] = thread([pC_fd = &c_fds[i]]()
+        threads[i] = thread([pC_fd = &c_fds[i], this]()
         {
             while(1)
             {
-                while(*pC_fd == (SOCKET)-1);
+                while(*pC_fd == (SOCKET)-1 || !*pC_fd);
                 proxy(*pC_fd);
                 *pC_fd = (SOCKET)-1;
             }
@@ -188,21 +199,39 @@ void proxyDriver(int maxThreadsCount)
     });
 }
 
-int main()
+void HTTPS_PROXY::runWithoutPreAllocatingThreads()
 {
-#ifdef _WIN32
-    initWinSock();
-#endif
-
+#ifndef _WIN32
  //   if(!fork())
  //   {
-        
-        server([](SOCKET c_fd)
+#endif
+
+        server([this](SOCKET c_fd)
         {
-            thread(proxy, c_fd).detach();
+            std::thread([this, c_fd]()
+            {
+                this->proxy(c_fd);
+            }).detach();
         });
-    
+        
 //    proxyDriver(12);
+#ifndef _WIN32
 //    }
+#endif
+}
+
+void onStop(int argc)
+{
+    isRuning = 0;
+    exit(1);
+}
+
+int main()
+{
+    signal(SIGINT, onStop);
+
+    HTTPS_PROXY* httpProxy = new HTTPS_PROXY();
+    httpProxy->runWithoutPreAllocatingThreads();
+    delete httpProxy;
     return 0;
 }
