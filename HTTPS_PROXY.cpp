@@ -29,6 +29,7 @@ int HTTPS_PROXY::proxyAuth(std::string proxyAuthStr)
 
 void HTTPS_PROXY::proxy(SOCKET c_fd)
 {
+    clients_count++;
     cout << c_fd << ", Connected\n";
 
     SOCKET sc_fd = 0;
@@ -99,14 +100,15 @@ void HTTPS_PROXY::proxy(SOCKET c_fd)
                     break;//FUCK!!!
                 }
             dataUsages[curUser] += rLen;
-            while ((srLen = recv(sc_fd, srBuf, 1024, 0)) > 0)
+            while ((srLen = recv(sc_fd, srBuf, 1024, 0)) > 0 && isRuning)
             {
                 srBuf[srLen] = 0;
                 send(c_fd, srBuf, srLen, 0);
                 dataUsages[curUser] += srLen;
             }
-            if (!srLen)
+            if (!srLen || errno != 11)
                 break;
+            
         }
         else
         {
@@ -147,7 +149,6 @@ void HTTPS_PROXY::server(F f)
             c_fd = accept(s_fd, (struct sockaddr*)&c_addr, &c_len);
             if (c_fd > 0 && c_fd != (SOCKET)-1)
             {
-                clients_count++;
     //            while (clients_count > 12);
                 f(c_fd);
     //            thread(proxy, c_fd).detach();
@@ -169,9 +170,9 @@ void HTTPS_PROXY::proxyDriver(int maxThreadsCount)
     {
         threads[i] = thread([pC_fd = &c_fds[i], this]()
         {
-            while(1)
+            while(isRuning)
             {
-                while(*pC_fd == (SOCKET)-1 || !*pC_fd);
+                while(isRuning && (*pC_fd == (SOCKET)-1 || !*pC_fd));
                 proxy(*pC_fd);
                 *pC_fd = (SOCKET)-1;
             }
@@ -223,7 +224,6 @@ void HTTPS_PROXY::runWithoutPreAllocatingThreads()
 void onStop(int argc)
 {
     isRuning = 0;
-    exit(1);
 }
 
 int main()
