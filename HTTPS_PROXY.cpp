@@ -4,16 +4,14 @@
 #include "HTTPS_PROXY.h"
 #include "base64.h"
 
-short isRuning = 1;
+short isRunning = 1;
 int clients_count = 0;
 
 using namespace std;
 
-#define USERSCOUNT 2
-string users[USERSCOUNT] = {"TEA:ASDAS", "MR.ROBOT:000"};
-size_t dataUsages[USERSCOUNT] = {};
+string users[USERSCOUNT] = { "TEA:ASDAS", "MR.ROBOT:000" };
 
-int HTTPS_PROXY::proxyAuth(std::string proxyAuthStr)
+int HTTPS_PROXY::ProxyAuth(std::string proxyAuthStr)
 {
     proxyAuthStr = base64_decrypt((uchar*)proxyAuthStr.substr(5).c_str());
     int i;
@@ -27,7 +25,7 @@ int HTTPS_PROXY::proxyAuth(std::string proxyAuthStr)
     return i;
 }
 
-void HTTPS_PROXY::proxy(SOCKET c_fd)
+void HTTPS_PROXY::Proxy(SOCKET c_fd)
 {
     clients_count++;
     cout << c_fd << ", Connected\n";
@@ -35,11 +33,12 @@ void HTTPS_PROXY::proxy(SOCKET c_fd)
     SOCKET sc_fd = 0;
     char rBuf[1025] = "", srBuf[1025] = "";
     string headerStr = "", hostStr = "", proxyAuthStr = "";
+    size_t dataUsages = {};
     int rLen = 0, srLen, curUser = 0;
     unsigned long mOn = 1;
     ioctlsocket(c_fd, FIONBIO, &mOn);
     sockaddr_in sc_Addr;
-    while (isRuning)
+    while (isRunning)
     {
         if (c_fd <= 0)
             break;
@@ -64,14 +63,14 @@ void HTTPS_PROXY::proxy(SOCKET c_fd)
                     send(c_fd, authReq, strlen(authReq), 0);
                     break;
                 }
-                else if ((curUser = proxyAuth(proxyAuthStr)) >= USERSCOUNT)
+                else if ((curUser = ProxyAuth(proxyAuthStr)) >= USERSCOUNT)
                 {
                     send(c_fd, "HTTP/1.1 403 No Fucking Way\r\n\r\n", 31, 0);
                     cout<<"OHNONONONO"<<endl;
                     break;
-                }
-                dataUsages[curUser] += headerStr.length();
-                */
+                }*/
+                dataUsages += headerStr.length();
+                
                 hostStr = httpGetHeaderContent(headerStr, "Host").c_str();
                 if (hostStr != "")
                 {
@@ -99,12 +98,12 @@ void HTTPS_PROXY::proxy(SOCKET c_fd)
                 {
                     break;//FUCK!!!
                 }
-            dataUsages[curUser] += rLen;
-            while ((srLen = recv(sc_fd, srBuf, 1024, 0)) > 0 && isRuning)
+            dataUsages += rLen;
+            while ((srLen = recv(sc_fd, srBuf, 1024, 0)) > 0 && isRunning)
             {
                 srBuf[srLen] = 0;
                 send(c_fd, srBuf, srLen, 0);
-                dataUsages[curUser] += srLen;
+                dataUsages += srLen;
             }
             if (!srLen)
                 break;
@@ -113,7 +112,7 @@ void HTTPS_PROXY::proxy(SOCKET c_fd)
         else
         {
             send(c_fd, "HTTP/1.1 200 Connection established\r\n\r\n", 40, 0);
-            dataUsages[curUser] += 40;
+            dataUsages += 40;
             if (httpGetHeaderContent(headerStr, "Connection") == "close" || httpGetHeaderContent(headerStr, "Proxy-Connection") == "close")
                 break;
             headerStr = "";
@@ -125,43 +124,41 @@ void HTTPS_PROXY::proxy(SOCKET c_fd)
     }
     closesocket(sc_fd);
     closesocket(c_fd);
+
+    tMutex.lock();
+    mDataUsages[curUser] += dataUsages;
+    tMutex.unlock();
     clients_count--;
     cout << c_fd << ", closed\n";
 }
 
 template <typename F>
-void HTTPS_PROXY::server(F f)
+void HTTPS_PROXY::Server(F f)
 {
     SOCKET s_fd, c_fd;
     struct sockaddr_in cli_addr = {}, srv_addr = initAddr("0.0.0.0", 4399);
     socklen_t cli_len;
-    unsigned long mOn = 1;
-    while (isRuning)
+
+    s_fd = initSocket();
+    setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&mOn, sizeof(char));
+    while (listenSocket(s_fd, &srv_addr) == (SOCKET)-1 && isRunning);
+    ioctlsocket(s_fd, FIONBIO, &mOn);
+    while (isRunning)
     {
-        s_fd = initSocket();
-        setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&mOn, sizeof(char));
-        printf("Listening...\n");
-        if (listenSocket(s_fd, &srv_addr) == (SOCKET)-1)
-            continue;
-        ioctlsocket(s_fd, FIONBIO, &mOn);
-        while (isRuning)
+        c_fd = accept(s_fd, (struct sockaddr*)&cli_addr, &cli_len);
+        if (c_fd > 0 && c_fd != (SOCKET)-1)
         {
-            c_fd = accept(s_fd, (struct sockaddr*)&cli_addr, &cli_len);
-            if (c_fd > 0 && c_fd != (SOCKET)-1)
-            {
-    //            while (clients_count > 12);
-                f(c_fd);
-    //            thread(proxy, c_fd).detach();
-                break;
-            }
+            //while (clients_count > 12);
+            f(c_fd);
+            //thread(proxy, c_fd).detach();
         }
-        closesocket(s_fd);
     }
     while (clients_count);
+    closesocket(data_fd);
     closeSocket(&s_fd);
 }
 
-void HTTPS_PROXY::proxyDriver(int maxThreadsCount)
+void HTTPS_PROXY::ProxyDriver(int maxThreadsCount)
 {
     std::thread threads[maxThreadsCount];
     SOCKET c_fds[maxThreadsCount];
@@ -170,29 +167,32 @@ void HTTPS_PROXY::proxyDriver(int maxThreadsCount)
     {
         threads[i] = thread([pC_fd = &c_fds[i], this]()
         {
-            while(isRuning)
+            do
             {
-                while(isRuning && (*pC_fd == (SOCKET)-1 || !*pC_fd));
-                proxy(*pC_fd);
+                while(isRunning && (*pC_fd == (SOCKET)-1 || !*pC_fd));
+                if (!isRunning)
+                    return;
+
+                Proxy(*pC_fd);
                 *pC_fd = (SOCKET)-1;
-            }
+            } while (isRunning);
         });
         threads[i].detach();
     }
-    server([maxThreadsCount, c_fds=&c_fds[0]](SOCKET c_fd)
+    Server([maxThreadsCount, c_fds=&c_fds[0]](SOCKET c_fd)
     {
-        if (c_fd <= 0)
+        if (c_fd != (SOCKET)-1)
             return;
 
         int i;
-        while (isRuning)
+        while (isRunning)
         {
             for (i = 0; i < maxThreadsCount; i++)
             {
                 if (c_fds[i] == (SOCKET)-1)
                 {
                     c_fds[i] = c_fd;
-                    return;
+                    break;
                 }
             }
 //            cout << "clients count:" << clients_count <<endl;
@@ -200,18 +200,18 @@ void HTTPS_PROXY::proxyDriver(int maxThreadsCount)
     });
 }
 
-void HTTPS_PROXY::runWithoutPreAllocatingThreads()
+void HTTPS_PROXY::RunWithoutPreAllocatingThreads()
 {
 #ifndef _WIN32
  //   if(!fork())
  //   {
 #endif
 
-        server([this](SOCKET c_fd)
+        Server([this](SOCKET c_fd)
         {
             std::thread([this, c_fd]()
             {
-                this->proxy(c_fd);
+                this->Proxy(c_fd);
             }).detach();
         });
         
@@ -223,7 +223,7 @@ void HTTPS_PROXY::runWithoutPreAllocatingThreads()
 
 void onStop(int argc)
 {
-    isRuning = 0;
+    isRunning = 0;
 }
 
 int main()
@@ -231,7 +231,10 @@ int main()
     signal(SIGINT, onStop);
 
     HTTPS_PROXY* httpProxy = new HTTPS_PROXY();
-    httpProxy->runWithoutPreAllocatingThreads();
+//    httpProxy->RunWithoutPreAllocatingThreads();
+    httpProxy->ProxyDriver(12);
     delete httpProxy;
+    httpProxy = nullptr;
+
     return 0;
 }
