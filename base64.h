@@ -1,5 +1,6 @@
 #include <string>
 
+typedef unsigned int uint;
 typedef unsigned char uchar;
 typedef signed char schar;
 
@@ -13,7 +14,7 @@ static uint tellmewhere (const uchar* str, const uchar chr, uint sLen)
 
 static std::string base64_decrypt(const uchar* cipher)
 {
-    uint sLen = strlen((const char*)cipher), j = 0;
+    uint sLen = (uint)strlen((const char*)cipher), j = 0;
     while(cipher[--sLen] == '=');
     schar offset = 0;
     uchar* result = (uchar*)malloc (sLen * 3 / 4), sIndex;
@@ -40,7 +41,7 @@ static std::string base64_decrypt(const uchar* cipher)
  
 static std::string base64_encrypt(const uchar* source)
 {
-    const uint sLen = strlen((const char*)source);
+    const uint sLen = (uint)strlen((const char*)source);
     uint j = 3 - (sLen - 1) % 3;
     const uint cLen = sLen * 4 / 3 + j;
     uchar* result = (uchar*)malloc (cLen), offset = 0, b = 2;

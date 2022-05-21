@@ -119,7 +119,7 @@ static SOCKET listenSocket(const SOCKET s_fd, struct sockaddr_in* srv_addr)
 
 	if (bind(s_fd, (struct sockaddr*)srv_addr, s_len) < 0)
 	{
-		std::cout << s_fd << ", " << errno << ", " << strerror(errno) << std::endl;
+		std::cout << s_fd << ", " << errno  << std::endl;
 		goto error;
 	}
 

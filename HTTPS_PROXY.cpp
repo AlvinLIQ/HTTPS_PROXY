@@ -35,7 +35,7 @@ void HTTPS_PROXY::proxy(SOCKET c_fd)
     SOCKET sc_fd = 0;
     char rBuf[1025] = "", srBuf[1025] = "";
     string headerStr = "", hostStr = "", proxyAuthStr = "";
-    int rLen = 0, srLen, curUser;
+    int rLen = 0, srLen, curUser = 0;
     unsigned long mOn = 1;
     ioctlsocket(c_fd, FIONBIO, &mOn);
     sockaddr_in sc_Addr;
@@ -106,7 +106,7 @@ void HTTPS_PROXY::proxy(SOCKET c_fd)
                 send(c_fd, srBuf, srLen, 0);
                 dataUsages[curUser] += srLen;
             }
-            if (!srLen || errno != 11)
+            if (!srLen)
                 break;
             
         }
@@ -133,20 +133,20 @@ template <typename F>
 void HTTPS_PROXY::server(F f)
 {
     SOCKET s_fd, c_fd;
-    struct sockaddr_in c_addr, s_addr = initAddr("0.0.0.0", 4399);
-    socklen_t c_len;
-    int mOn = 1;
+    struct sockaddr_in cli_addr = {}, srv_addr = initAddr("0.0.0.0", 4399);
+    socklen_t cli_len;
+    unsigned long mOn = 1;
     while (isRuning)
     {
         s_fd = initSocket();
-        setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, &mOn, sizeof(mOn));
+        setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&mOn, sizeof(char));
         printf("Listening...\n");
-        if (listenSocket(s_fd, &s_addr) == (SOCKET)-1)
+        if (listenSocket(s_fd, &srv_addr) == (SOCKET)-1)
             continue;
         ioctlsocket(s_fd, FIONBIO, &mOn);
         while (isRuning)
         {
-            c_fd = accept(s_fd, (struct sockaddr*)&c_addr, &c_len);
+            c_fd = accept(s_fd, (struct sockaddr*)&cli_addr, &cli_len);
             if (c_fd > 0 && c_fd != (SOCKET)-1)
             {
     //            while (clients_count > 12);
@@ -155,7 +155,7 @@ void HTTPS_PROXY::server(F f)
                 break;
             }
         }
-        close(s_fd);
+        closesocket(s_fd);
     }
     while (clients_count);
     closeSocket(&s_fd);
