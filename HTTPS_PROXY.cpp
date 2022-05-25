@@ -181,7 +181,7 @@ void HTTPS_PROXY::ProxyDriver(int maxThreadsCount)
     }
     Server([maxThreadsCount, c_fds=&c_fds[0]](SOCKET c_fd)
     {
-        if (c_fd != (SOCKET)-1)
+        if (c_fd == (SOCKET)-1)
             return;
 
         int i;
@@ -192,7 +192,7 @@ void HTTPS_PROXY::ProxyDriver(int maxThreadsCount)
                 if (c_fds[i] == (SOCKET)-1)
                 {
                     c_fds[i] = c_fd;
-                    break;
+                    return;
                 }
             }
 //            cout << "clients count:" << clients_count <<endl;
@@ -232,7 +232,7 @@ int main()
 
     HTTPS_PROXY* httpProxy = new HTTPS_PROXY();
 //    httpProxy->RunWithoutPreAllocatingThreads();
-    httpProxy->ProxyDriver(12);
+    httpProxy->ProxyDriver(20);
     delete httpProxy;
     httpProxy = nullptr;
 
