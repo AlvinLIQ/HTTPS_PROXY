@@ -136,12 +136,15 @@ template <typename F>
 void HTTPS_PROXY::Server(F f)
 {
     SOCKET s_fd, c_fd;
-    struct sockaddr_in cli_addr = {}, srv_addr = initAddr("0.0.0.0", 4399);
+    struct sockaddr_in cli_addr = {}, srv_addr = initAddr("127.0.0.1", 4399);
     socklen_t cli_len;
 
     s_fd = initSocket();
     setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&mOn, sizeof(char));
-    while (listenSocket(s_fd, &srv_addr) == (SOCKET)-1 && isRunning);
+    if (listenSocket(s_fd, &srv_addr) == (SOCKET)-1)
+    {
+        return;
+    }
     ioctlsocket(s_fd, FIONBIO, &mOn);
     while (isRunning)
     {
@@ -231,8 +234,8 @@ int main()
     signal(SIGINT, onStop);
 
     HTTPS_PROXY* httpProxy = new HTTPS_PROXY();
-//    httpProxy->RunWithoutPreAllocatingThreads();
-    httpProxy->ProxyDriver(20);
+    httpProxy->RunWithoutPreAllocatingThreads();
+//    httpProxy->ProxyDriver(20);
     delete httpProxy;
     httpProxy = nullptr;
 
