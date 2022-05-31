@@ -25,6 +25,8 @@ typedef unsigned int SOCKET;
 #include <iostream>
 #include <string>
 
+const unsigned long mOn = 1;
+
 static struct sockaddr_in initAddr_shd(unsigned int ip, int port)
 {
 	struct sockaddr_in target_addr;
@@ -158,6 +160,33 @@ static std::string httpGetHeaderContent(std::string headerStr, const char* targe
 	return result;
 }
 
+template <typename F>
+static void Server(F f, short* pState, int *pClientCount)
+{
+    SOCKET s_fd, c_fd;
+    struct sockaddr_in cli_addr = {}, srv_addr = initAddr("127.0.0.1", 4399);
+    socklen_t cli_len;
+
+    s_fd = initSocket();
+    setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&mOn, sizeof(char));
+    if (listenSocket(s_fd, &srv_addr) == (SOCKET)-1)
+    {
+        return;
+    }
+    ioctlsocket(s_fd, FIONBIO, &mOn);
+    while (*pState)
+    {
+        c_fd = accept(s_fd, (struct sockaddr*)&cli_addr, &cli_len);
+        if (c_fd > 0 && c_fd != (SOCKET)-1)
+        {
+            //while (clients_count > 12);
+            f(c_fd);
+            //thread(proxy, c_fd).detach();
+        }
+    }
+    while (*pClientCount);
+    closeSocket(&s_fd);
+}
 
 
 #ifdef _WIN32

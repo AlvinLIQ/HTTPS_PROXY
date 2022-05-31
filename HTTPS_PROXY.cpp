@@ -132,35 +132,6 @@ void HTTPS_PROXY::Proxy(SOCKET c_fd)
     cout << c_fd << ", closed\n";
 }
 
-template <typename F>
-void HTTPS_PROXY::Server(F f)
-{
-    SOCKET s_fd, c_fd;
-    struct sockaddr_in cli_addr = {}, srv_addr = initAddr("127.0.0.1", 4399);
-    socklen_t cli_len;
-
-    s_fd = initSocket();
-    setsockopt(s_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&mOn, sizeof(char));
-    if (listenSocket(s_fd, &srv_addr) == (SOCKET)-1)
-    {
-        return;
-    }
-    ioctlsocket(s_fd, FIONBIO, &mOn);
-    while (isRunning)
-    {
-        c_fd = accept(s_fd, (struct sockaddr*)&cli_addr, &cli_len);
-        if (c_fd > 0 && c_fd != (SOCKET)-1)
-        {
-            //while (clients_count > 12);
-            f(c_fd);
-            //thread(proxy, c_fd).detach();
-        }
-    }
-    while (clients_count);
-    closesocket(data_fd);
-    closeSocket(&s_fd);
-}
-
 void HTTPS_PROXY::ProxyDriver(int maxThreadsCount)
 {
     std::thread threads[maxThreadsCount];
@@ -200,7 +171,7 @@ void HTTPS_PROXY::ProxyDriver(int maxThreadsCount)
             }
 //            cout << "clients count:" << clients_count <<endl;
         };
-    });
+    }, &isRunning, &clients_count);
 }
 
 void HTTPS_PROXY::RunWithoutPreAllocatingThreads()
@@ -216,7 +187,7 @@ void HTTPS_PROXY::RunWithoutPreAllocatingThreads()
             {
                 this->Proxy(c_fd);
             }).detach();
-        });
+        }, &isRunning, &clients_count);
         
 //    proxyDriver(12);
 #ifndef _WIN32
